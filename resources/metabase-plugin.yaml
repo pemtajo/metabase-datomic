@@ -7,9 +7,13 @@ driver:
   display-name: Datomic
   lazy-load: true
   connection-properties:
-    - name: db
-      display-name: URL
-      placeholder: datomic:mem://metabase_dev
+    - name: client-args
+      display-name: Client Args
+      placeholder: "{}"
+      required: true
+    - name: db-name
+      display-name: Database Name
+      placeholder: "mbrainz"
       required: true
     - name: config
       display-name: Configuration EDN

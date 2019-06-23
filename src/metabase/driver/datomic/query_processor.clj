@@ -1,8 +1,8 @@
 (ns metabase.driver.datomic.query-processor
   (:require [clojure.set :as set]
             [clojure.string :as str]
-            [datomic.api :as d]
-            [metabase.driver.datomic.util :as util :refer [pal par]]
+            [datomic.client.api :as d]
+            [metabase.driver.datomic.util :as util :refer [connect pal par]]
             [metabase.mbql.util :as mbql.u]
             [metabase.models.field :as field :refer [Field]]
             [metabase.models.table :refer [Table]]
@@ -20,9 +20,6 @@
 ;; attr  : A datomic attribute, i.e. a qualified keyword
 ;; ?foo / lvar : A logic variable, i.e. a symbol starting with a question mark
 
-(def connect #_(memoize d/connect)
-  d/connect)
-
 (defn user-config []
   (try
     (-> (get-in (qp.store/database) [:details :config] "{}") read-string)
@@ -34,9 +31,9 @@
     (eval form)))
 
 (defn db []
-  (let [db (-> (get-in (qp.store/database) [:details :db]) connect d/db)]
+  (let [db (-> (get-in (qp.store/database) [:details]) connect d/db)]
     (if-let [pred (tx-filter)]
-      (d/filter db pred)
+      (throw (IllegalArgumentException. "Not supported")) #_(d/filter db pred)
       db)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -53,9 +50,12 @@
 (defn attributes
   "Query db for all attribute entities."
   [db]
-  (->> db
-       (d/q '{:find [[?eid ...]] :where [[?eid :db/valueType]]})
-       (map (partial d/entity db))))
+  (into
+   []
+   (map first)
+   (d/q '{:find (d/pull :eid [*])
+          :where [[?eid :db/valueType]]}
+        db)))
 
 (defn attrs-by-table
   "Map from table name to collection of attribute entities."
@@ -117,7 +117,7 @@
 (defn cardinality-many?
   "Is the given keyword an reference attribute with cardinality/many?"
   [attr]
-  (= :db.cardinality/many (:db/cardinality (d/entity *db* attr))))
+  (= :db.cardinality/many (:db/cardinality (d/pull *db* [:db/cardinality] attr))))
 
 (defn attr-type [attr]
   (get-in
@@ -125,7 +125,7 @@
    [:db/valueType :db/ident]))
 
 (defn entid [ident]
-  (d/entid *db* ident))
+  (:db/id (d/pull *db* [:db/id] ident)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Datalog query helpers
@@ -947,8 +947,9 @@
       (assert idx)
       (fn [row]
         (let [value (nth row idx)]
+          value
           ;; Try to convert enum-style ident references back to keywords
-          (if-let [attr-entity (and (integer? value) (ref? entity-fn attr))]
+          #_(if-let [attr-entity (and (integer? value) (ref? entity-fn attr))]
             (or (d/ident (d/entity-db attr-entity) value)
                 value)
             value))))))
@@ -1048,7 +1049,7 @@
                              ;; fields, but we don't want to replace false with
                              ;; nil in results.
                              (disj false))
-        entity-fn (memoize (fn [eid] (d/entity db eid)))]
+        entity-fn (memoize (fn [eid] (d/pull db eid)))]
     (->> result
          ;; TODO: This needs to be retought, we can only really order after
          ;; expanding set references (cartesian-product). Currently breaks when

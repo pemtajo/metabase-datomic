@@ -1,6 +1,9 @@
 (ns metabase.driver.datomic.util
   (:import java.util.Date)
-  (:require [clojure.string :as str]))
+  (:require
+   [clojure.edn :as edn]
+   [clojure.string :as str]
+   [datomic.client.api :as d]))
 
 (defn kw->str [s]
   (str (namespace s) "/" (name s)))
@@ -93,3 +96,11 @@
                    (str prefix))
     (str/includes? (str/lower-case (str s))
                    (str/lower-case (str prefix)))))
+
+(def cached-client
+  (memoize d/client))
+
+(defn connect
+  [{:keys [client-args db-name]}]
+  (d/connect (cached-client (edn/read-string client-args)) db-name))
+

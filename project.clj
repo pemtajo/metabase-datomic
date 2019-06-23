@@ -10,6 +10,7 @@
   {:provided
    {:dependencies [[metabase-core "1.0.0-SNAPSHOT"]]}
 
+   :datomic-client {:lein-tools-deps/config {:aliases [:datomic-client]}}
    :datomic-free {:lein-tools-deps/config {:aliases [:datomic-free]}}
    :datomic-pro
    {:lein-tools-deps/config {:aliases [:datomic-pro]}

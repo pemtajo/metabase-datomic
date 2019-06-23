@@ -1,5 +1,5 @@
 (ns metabase.driver.datomic
-  (:require [datomic.api :as d]
+  (:require [datomic.client.api :as d]
             [metabase.driver :as driver]
             [metabase.driver.datomic.query-processor :as datomic.qp]
             [metabase.driver.datomic.util :as util]
@@ -25,16 +25,16 @@
   (defmethod driver/supports? [:datomic feature] [_ _]
     (get features feature)))
 
-(defmethod driver/can-connect? :datomic [_ {db :db}]
+(defmethod driver/can-connect? :datomic [_ m]
   (try
-    (d/connect db)
+    (util/connect m)
     true
     (catch Exception e
       false)))
 
 (defmethod driver/describe-database :datomic [_ instance]
-  (let [url (get-in instance [:details :db])
-        table-names (datomic.qp/derive-table-names (d/db (d/connect url)))]
+  (let [driver-args (get-in instance [:details])
+        table-names (datomic.qp/derive-table-names (d/db (util/connect driver-args)))]
     {:tables
      (set
       (for [table-name table-names]
@@ -72,9 +72,9 @@
     (util/kw->str col)))
 
 (defn describe-table [database {table-name :name}]
-  (let [url    (get-in database [:details :db])
+  (let [m (get-in database [:details])
         config (user-config database)
-        db     (d/db (d/connect url))
+        db     (d/db (util/connect m))
         cols   (datomic.qp/table-columns db table-name)
         rels   (get-in config [:relationships (keyword table-name)])]
     {:name   table-name
@@ -117,8 +117,8 @@
         (table? (name col)))))
 
 (defn describe-table-fks [database {table-name :name}]
-  (let [url    (get-in database [:details :db])
-        db     (d/db (d/connect url))
+  (let [m      (get-in database [:details])
+        db     (d/db (util/connect m))
         config (user-config database)
         tables (datomic.qp/derive-table-names db)
         cols   (datomic.qp/table-columns db table-name)
