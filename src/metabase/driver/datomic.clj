@@ -48,9 +48,13 @@
       (log/error e "Datomic EDN is not configured correctly."))))
 
 (derive :type/Keyword :type/Text)
+(derive :type/Symbol :type/Text)
+(derive :type/Tuple :type/Text) ;;for now
 
 (def datomic->metabase-type
   {:db.type/keyword :type/Keyword    ;; Value type for keywords.
+   :db.type/symbol  :type/Symbol     ;; Value type for symbols.
+   :db.type/tuple   :type/Tuple      ;; Value type for tuples.
    :db.type/string  :type/Text       ;; Value type for strings.
    :db.type/boolean :type/Boolean    ;; Boolean value type.
    :db.type/long    :type/Integer    ;; Fixed integer value type. Same semantics as a Java long: 64 bits wide, two's complement binary representation.
@@ -102,11 +106,11 @@
 
 (defn guess-dest-column [db table-names col]
   (let [table? (into #{} table-names)
-        attrs (d/q (assoc '{:find [[?ident ...]]}
-                     :where [['_ col '?eid]
-                             '[?eid ?attr]
-                             '[?attr :db/ident ?ident]])
-                   db)]
+        attrs (mapv first (d/q (assoc '{:find [?ident]}
+                                 :where [['_ col '?eid]
+                                         '[?eid ?attr]
+                                         '[?attr :db/ident ?ident]])
+                               db))]
     (or (some->> attrs
                  (map namespace)
                  (remove #{"db"})

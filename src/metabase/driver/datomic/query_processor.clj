@@ -43,19 +43,20 @@
   #{"fressian"
     "db"
     "db.alter"
+    "db.attr"
+    "db.entity"
     "db.excise"
     "db.install"
-    "db.sys"})
+    "db.sys"
+    "mbrainz.initial-import"})
 
 (defn attributes
   "Query db for all attribute entities."
   [db]
-  (into
-   []
-   (map first)
-   (d/q '{:find (d/pull :eid [*])
-          :where [[?eid :db/valueType]]}
-        db)))
+  (mapv first
+        (d/q '[:find (pull ?eid [*])
+               :where [?eid :db/valueType]]
+             db)))
 
 (defn attrs-by-table
   "Map from table name to collection of attribute entities."
@@ -74,11 +75,11 @@
   "Given the name of a \"table\" (attribute namespace prefix), find all attribute
   names that occur in entities that have an attribute with this prefix."
   [db table]
-  {:pre [(instance? datomic.db.Db db)
+  {:pre [#_(instance? datomic.db.Db db)
          (string? table)]}
   (let [attrs (get (attrs-by-table db) table)]
     (-> #{}
-        (into (map (juxt :db/ident :db/valueType))
+        (into (map (juxt :db/ident (comp :db/ident :db/valueType)))
               attrs)
         (into (d/q
                {:find '[?ident ?type]
@@ -1049,7 +1050,7 @@
                              ;; fields, but we don't want to replace false with
                              ;; nil in results.
                              (disj false))
-        entity-fn (memoize (fn [eid] (d/pull db eid)))]
+        entity-fn (memoize (fn [eid] (d/pull db '[*] eid)))]
     (->> result
          ;; TODO: This needs to be retought, we can only really order after
          ;; expanding set references (cartesian-product). Currently breaks when
@@ -1154,7 +1155,7 @@
 (defn execute-query [{:keys [native query] :as native-query}]
   (let [db      (db)
         dqry    (read-query (:query native))
-        results (d/q (dissoc dqry :fields) db (:rules (user-config)))
+        results (d/q (dissoc dqry :fields) db (or (:rules (user-config)) []))
         ;; Hacking around this is as it's so common in Metabase's automatic
         ;; dashboards. Datomic never returns a count of zero, instead it just
         ;; returns an empty result.

@@ -102,5 +102,10 @@
 
 (defn connect
   [{:keys [client-args db-name]}]
-  (d/connect (cached-client (edn/read-string client-args)) db-name))
+  (let [cfg (edn/read-string client-args)]
+    (try (d/connect (cached-client cfg) {:db-name db-name})
+         (catch Exception e
+           (prn {:cfg cfg :db-name db-name})
+           (prn e)
+           (throw e)))))
 
