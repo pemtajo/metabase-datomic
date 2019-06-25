@@ -36,6 +36,17 @@
       (throw (IllegalArgumentException. "Not supported")) #_(d/filter db pred)
       db)))
 
+(defn q
+  ([arg-map]
+     (try (d/q (cond-> arg-map
+                       (nil? (:timeout arg-map)) (assoc :timeout 60000)))
+          (catch Exception e
+            (prn e)
+            (prn :query)
+            (prn (:query arg-map))
+            (throw e))))
+  ([query & args]
+     (q {:query query :args args})))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SCHEMA
 
@@ -54,9 +65,9 @@
   "Query db for all attribute entities."
   [db]
   (mapv first
-        (d/q '[:find (pull ?eid [*])
-               :where [?eid :db/valueType]]
-             db)))
+        (q '[:find (pull ?eid [*])
+             :where [?eid :db/valueType]]
+           db)))
 
 (defn attrs-by-table
   "Map from table name to collection of attribute entities."
@@ -77,21 +88,26 @@
   [db table]
   {:pre [#_(instance? datomic.db.Db db)
          (string? table)]}
-  (let [attrs (get (attrs-by-table db) table)]
+  (let [attrs (get (attrs-by-table db) table)
+        query {:find '[?ident ?type]
+               :where [[(list 'q
+                              (list 'quote
+                                    [:find '(sample 1000 ?e)
+                                     :where (cons 'or
+                                                  (for [attr attrs]
+                                                    ['?e (:db/ident attr)]))])
+                              '$)
+                        '?eids]
+                       '[(ffirst ?eids) [?eid ...]]
+                       '[?eid ?attr]
+                       '[?attr :db/ident ?ident]
+                       '[?attr :db/valueType ?type-id]
+                       '[?type-id :db/ident ?type]
+                       '[(not= ?ident :db/ident)]]}]
     (-> #{}
         (into (map (juxt :db/ident (comp :db/ident :db/valueType)))
               attrs)
-        (into (d/q
-               {:find '[?ident ?type]
-                :where [(cons 'or
-                              (for [attr attrs]
-                                ['?eid (:db/ident attr)]))
-                        '[?eid ?attr]
-                        '[?attr :db/ident ?ident]
-                        '[?attr :db/valueType ?type-id]
-                        '[?type-id :db/ident ?type]
-                        '[(not= ?ident :db/ident)]]}
-               db))
+        (into (q query db))
         sort)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -118,7 +134,7 @@
 (defn cardinality-many?
   "Is the given keyword an reference attribute with cardinality/many?"
   [attr]
-  (= :db.cardinality/many (:db/cardinality (d/pull *db* [:db/cardinality] attr))))
+  (= :db.cardinality/many (:db/ident (:db/cardinality (d/pull *db* [:db/cardinality] attr)))))
 
 (defn attr-type [attr]
   (get-in
@@ -1155,7 +1171,7 @@
 (defn execute-query [{:keys [native query] :as native-query}]
   (let [db      (db)
         dqry    (read-query (:query native))
-        results (d/q (dissoc dqry :fields) db (or (:rules (user-config)) []))
+        results (q (dissoc dqry :fields :select) db (or (:rules (user-config)) []))
         ;; Hacking around this is as it's so common in Metabase's automatic
         ;; dashboards. Datomic never returns a count of zero, instead it just
         ;; returns an empty result.
